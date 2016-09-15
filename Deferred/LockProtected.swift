@@ -9,8 +9,8 @@
 import Foundation
 
 public final class LockProtected<T> {
-    private var lock: ReadWriteLock
-    private var item: T
+    fileprivate var lock: ReadWriteLock
+    fileprivate var item: T
 
     public convenience init(item: T) {
         self.init(item: item, lock: CASSpinLock())
@@ -21,13 +21,13 @@ public final class LockProtected<T> {
         self.lock = lock
     }
 
-    public func withReadLock<U>(block: T -> U) -> U {
+    public func withReadLock<U>(_ block: @escaping (T) -> U) -> U {
         return lock.withReadLock { [unowned self] in
             return block(self.item)
         }
     }
 
-    public func withWriteLock<U>(block: (inout T) -> U) -> U {
+    public func withWriteLock<U>(_ block: @escaping (inout T) -> U) -> U {
         return lock.withWriteLock { [unowned self] in
             return block(&self.item)
         }
