@@ -9,7 +9,7 @@
 import Foundation
 
 // TODO: Replace this with a class var
-private var DeferredDefaultQueue = DispatchQueue.global(priority: DispatchQueue.GlobalQueuePriority.default)
+private var DeferredDefaultQueue = DispatchQueue.global(qos: DispatchQoS.QoSClass.default)
 
 open class Deferred<T> {
     typealias UponBlock = (DispatchQueue, (T) -> ())
@@ -82,7 +82,7 @@ extension Deferred {
         var result: T!
         group.enter()
         self.upon { result = $0; group.leave() }
-        group.wait(timeout: DispatchTime.distantFuture)
+        _ = group.wait(timeout: DispatchTime.distantFuture)
         return result
     }
 }
@@ -123,7 +123,7 @@ extension Deferred {
     }
 }
 
-public func all<T>(_ deferreds: [Deferred<T>]) -> Deferred<[T]> {
+func all<T>(_ deferreds: [Deferred<T>]) -> Deferred<[T]> {
     if deferreds.count == 0 {
         return Deferred(value: [])
     }
@@ -146,7 +146,7 @@ public func all<T>(_ deferreds: [Deferred<T>]) -> Deferred<[T]> {
     return combined
 }
 
-public func any<T>(_ deferreds: [Deferred<T>]) -> Deferred<Deferred<T>> {
+func any<T>(_ deferreds: [Deferred<T>]) -> Deferred<Deferred<T>> {
     let combined = Deferred<Deferred<T>>()
     for d in deferreds {
         d.upon { _ in combined.fillIfUnfilled(d) }
