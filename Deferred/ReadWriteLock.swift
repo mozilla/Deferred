@@ -9,52 +9,52 @@
 import Foundation
 
 public protocol ReadWriteLock: class {
-    func withReadLock<T>(block: () -> T) -> T
-    func withWriteLock<T>(block: () -> T) -> T
+    func withReadLock<T>(_ block: () -> T) -> T
+    func withWriteLock<T>(_ block: () -> T) -> T
 }
 
 public final class GCDReadWriteLock: ReadWriteLock {
-    private let queue = dispatch_queue_create("GCDReadWriteLock", DISPATCH_QUEUE_CONCURRENT)
+    fileprivate let queue = DispatchQueue(label: "GCDReadWriteLock", attributes: DispatchQueue.Attributes.concurrent)
 
     public init() {}
 
-    public func withReadLock<T>(block: () -> T) -> T {
+    public func withReadLock<T>(_ block: () -> T) -> T {
         var result: T!
-        dispatch_sync(queue) {
+        queue.sync {
             result = block()
         }
         return result
     }
 
-    public func withWriteLock<T>(block: () -> T) -> T {
+    public func withWriteLock<T>(_ block: () -> T) -> T {
         var result: T!
-        dispatch_barrier_sync(queue) {
+        queue.sync(flags: .barrier, execute: {
             result = block()
-        }
+        }) 
         return result
     }
 }
 
 public final class SpinLock: ReadWriteLock {
-    private var lock: UnsafeMutablePointer<Int32>
+    fileprivate var lock: UnsafeMutablePointer<Int32>
 
     public init() {
-        lock = UnsafeMutablePointer.alloc(1)
-        lock.memory = OS_SPINLOCK_INIT
+        lock = UnsafeMutablePointer.allocate(capacity: 1)
+        lock.pointee = OS_SPINLOCK_INIT
     }
 
     deinit {
-        lock.dealloc(1)
+        lock.deallocate(capacity: 1)
     }
 
-    public func withReadLock<T>(block: () -> T) -> T {
+    public func withReadLock<T>(_ block: () -> T) -> T {
         OSSpinLockLock(lock)
         let result = block()
         OSSpinLockUnlock(lock)
         return result
     }
 
-    public func withWriteLock<T>(block: () -> T) -> T {
+    public func withWriteLock<T>(_ block: () -> T) -> T {
         OSSpinLockLock(lock)
         let result = block()
         OSSpinLockUnlock(lock)
@@ -64,28 +64,28 @@ public final class SpinLock: ReadWriteLock {
 
 /// Test comment 2
 public final class CASSpinLock: ReadWriteLock {
-    private struct Masks {
+    fileprivate struct Masks {
         static let WRITER_BIT: Int32         = 0x40000000
         static let WRITER_WAITING_BIT: Int32 = 0x20000000
         static let MASK_WRITER_BITS          = WRITER_BIT | WRITER_WAITING_BIT
         static let MASK_READER_BITS          = ~MASK_WRITER_BITS
     }
 
-    private var _state: UnsafeMutablePointer<Int32>
+    fileprivate var _state: UnsafeMutablePointer<Int32>
 
     public init() {
-        _state = UnsafeMutablePointer.alloc(1)
-        _state.memory = 0
+        _state = UnsafeMutablePointer.allocate(capacity: 1)
+        _state.pointee = 0
     }
 
     deinit {
-        _state.dealloc(1)
+        _state.deallocate(capacity: 1)
     }
 
-    public func withWriteLock<T>(block: () -> T) -> T {
+    public func withWriteLock<T>(_ block: () -> T) -> T {
         // spin until we acquire write lock
         repeat {
-            let state = _state.memory
+            let state = _state.pointee
 
             // if there are no readers and no one holds the write lock, try to grab the write lock immediately
             if (state == 0 || state == Masks.WRITER_WAITING_BIT) &&
@@ -106,7 +106,7 @@ public final class CASSpinLock: ReadWriteLock {
 
         // unlock
         repeat {
-            let state = _state.memory
+            let state = _state.pointee
 
             // clear everything except (possibly) WRITER_WAITING_BIT, which will only be set
             // if another writer is already here and waiting (which will keep out readers)
@@ -118,10 +118,10 @@ public final class CASSpinLock: ReadWriteLock {
         return result
     }
 
-    public func withReadLock<T>(block: () -> T) -> T {
+    public func withReadLock<T>(_ block: () -> T) -> T {
         // spin until we acquire read lock
         repeat {
-            let state = _state.memory
+            let state = _state.pointee
 
             // if there is no writer and no writer waiting, try to increment reader count
             if (state & Masks.MASK_WRITER_BITS) == 0 &&
@@ -135,7 +135,7 @@ public final class CASSpinLock: ReadWriteLock {
 
         // decrement reader count
         repeat {
-            let state = _state.memory
+            let state = _state.pointee
 
             // sanity check that we have a positive reader count before decrementing it
             assert((state & Masks.MASK_READER_BITS) > 0, "unlocking read lock - invalid reader count")
